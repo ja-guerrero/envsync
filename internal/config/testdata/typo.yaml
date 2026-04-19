@@ -1,0 +1,6 @@
+version: 1
+
+vars:
+  API_KEY:
+    type: string
+    requirde: true        # typo — unknown field, strict mode should reject this
