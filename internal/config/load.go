@@ -43,5 +43,9 @@ func LoadUserConfig(path string) (*UserConfig, error) {
 		return nil, fmt.Errorf("parsing user config: %w", err)
 	}
 
+	if err := ValidateUserConfig(&cfg); err != nil {
+		return nil, err
+	}
+
 	return &cfg, nil
 }

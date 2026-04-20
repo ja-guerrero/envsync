@@ -22,9 +22,7 @@ vars:
 environments:
   production:
     backend: vault
-    params:
-      path: "myapp/prod"
+    path: "myapp/prod"
   staging:
     backend: vault
-    params:
-      path: "myapp/staging"
+    path: "myapp/staging"
