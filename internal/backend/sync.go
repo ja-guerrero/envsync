@@ -52,7 +52,7 @@ func SyncVars(ctx context.Context, vars map[string]*VarSource, backends map[stri
 		for _, vr := range vrefs {
 			val, ok := fetched[vr.ref.Key]
 			if !ok {
-				return nil, &ErrKeyNotFound{Key: vr.ref.Key, Backend: backendName}
+				continue // key not in backend — skip, let the validator catch required vars
 			}
 			result[vr.varName] = val
 		}

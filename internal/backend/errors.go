@@ -51,3 +51,13 @@ func (e *CodedError) Error() string {
 func (e *CodedError) Unwrap() error {
 	return e.Cause
 }
+
+// ErrKeyNotFound is returned when a key does not exist in the backend.
+type ErrKeyNotFound struct {
+	Key     string
+	Backend string
+}
+
+func (e *ErrKeyNotFound) Error() string {
+	return fmt.Sprintf("key %q not found in %s backend", e.Key, e.Backend)
+}
