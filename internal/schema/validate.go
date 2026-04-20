@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 )
 
@@ -36,7 +37,7 @@ func Validate(s Schema, env map[string]string) []Violation {
 			}
 		}
 
-		if len(v.Enum) > 0 && !contains(v.Enum, val) {
+		if len(v.Enum) > 0 && !slices.Contains(v.Enum, val) {
 			violations = append(violations, Violation{
 				Var:     name,
 				Message: fmt.Sprintf("value %q not in enum %v", val, v.Enum),
@@ -87,7 +88,7 @@ func checkType(t, val string) error {
 			return fmt.Errorf("expected number, got %q", val)
 		}
 	case "bool":
-		if _, err := strconv.ParseBool(val); err != nil {
+		if val != "true" && val != "false" {
 			return fmt.Errorf("expected bool (true/false), got %q", val)
 		}
 	case "url":
@@ -103,11 +104,3 @@ func checkType(t, val string) error {
 	return nil
 }
 
-func contains(list []string, val string) bool {
-	for _, s := range list {
-		if s == val {
-			return true
-		}
-	}
-	return false
-}
