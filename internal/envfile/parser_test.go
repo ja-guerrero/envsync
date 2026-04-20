@@ -398,3 +398,24 @@ func TestFileEntries(t *testing.T) {
 		t.Errorf("wrong entry order: %s, %s", entries[0].Key, entries[1].Key)
 	}
 }
+
+func FuzzParseFile(f *testing.F) {
+	// Seed corpus with representative inputs
+	f.Add("FOO=bar")
+	f.Add(`FOO="hello world"`)
+	f.Add("FOO='hello world'")
+	f.Add(`FOO="line1\nline2"`)
+	f.Add("# comment\nFOO=bar\nBAZ=qux")
+	f.Add("FOO=bar # comment")
+	f.Add("FOO=bar#notcomment")
+	f.Add("export FOO=bar")
+	f.Add("FOO=")
+	f.Add("FOO=a=b=c")
+	f.Add("")
+	f.Add("  FOO  =  bar  ")
+
+	f.Fuzz(func(t *testing.T, input string) {
+		// ParseFile must never panic. Errors are fine.
+		_, _ = ParseFile(strings.NewReader(input))
+	})
+}
