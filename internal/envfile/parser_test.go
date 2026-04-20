@@ -159,3 +159,43 @@ func TestParse(t *testing.T) {
 		})
 	}
 }
+
+func TestFileToMap(t *testing.T) {
+	f := &File{
+		Lines: []any{
+			&CommentLine{Text: "# header", Line: 1},
+			&Entry{Key: "FOO", Value: "bar", Line: 2},
+			&Entry{Key: "BAZ", Value: "qux", Line: 3},
+		},
+	}
+
+	m := f.ToMap()
+	if len(m) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(m))
+	}
+	if m["FOO"] != "bar" {
+		t.Errorf("FOO: got %q, want %q", m["FOO"], "bar")
+	}
+	if m["BAZ"] != "qux" {
+		t.Errorf("BAZ: got %q, want %q", m["BAZ"], "qux")
+	}
+}
+
+func TestFileEntries(t *testing.T) {
+	f := &File{
+		Lines: []any{
+			&CommentLine{Text: "# header", Line: 1},
+			&Entry{Key: "A", Value: "1", Line: 2},
+			&CommentLine{Text: "", Line: 3},
+			&Entry{Key: "B", Value: "2", Line: 4},
+		},
+	}
+
+	entries := f.Entries()
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if entries[0].Key != "A" || entries[1].Key != "B" {
+		t.Errorf("wrong entry order: %s, %s", entries[0].Key, entries[1].Key)
+	}
+}
