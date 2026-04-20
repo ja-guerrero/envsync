@@ -1,10 +1,8 @@
 # envsync
 
-**A schema-driven linter and validator for `.env` files.**
+**Schema-driven environment variable management.** Validate, lint, and sync `.env` files against a schema with secret backend support.
 
-Declare what environment variables your project needs, enforce them in CI, and catch typos, missing values, and wrong types before they hit production.
-
-> **Status: early development (v0.1).** The linter and validator work end-to-end. Backends, multi-environment support, and sync commands are on the roadmap below.
+> **Status: v0.2** — Lint, validate, sync (Vault), diff, and `--json` output all work end-to-end.
 
 ---
 
@@ -19,8 +17,6 @@ Every project has a `.env` file. Every project eventually has a bug because:
 - Different developers had different values and nobody knew whose was right.
 
 `envsync` gives your project a **schema** — a single source of truth for what env vars exist, what types they are, what values are allowed, and which are required. You commit the schema to git. Every developer and every CI run validates against it.
-
-Think of it as a type checker for your environment.
 
 ---
 
@@ -48,6 +44,7 @@ vars:
   DATABASE_URL:
     required: true
     type: url
+    secret: true
     description: "Postgres connection string"
 
   PORT:
@@ -65,25 +62,44 @@ vars:
     required: true
     secret: true
     format: "^sk_(test|live)_[A-Za-z0-9]+$"
+
+environments:
+  staging:
+    backend: vault-stag
+    mount: app
+    path: myapp/env
+    kv_version: 2
 ```
 
-**2. Lint the schema itself:**
+**2. Create `~/.envsync/config.yaml` for backend auth (not committed to git):**
+
+```yaml
+version: 1
+
+backends:
+  - name: vault-stag
+    type: vault
+    addr: https://vault-stag.internal:8200
+```
+
+**3. Lint the schema:**
 
 ```bash
 envsync lint
 ```
 
-Confirms your `.envsync.yaml` is syntactically valid and internally consistent (no contradictory rules, valid regexes, known types, etc.).
-
-**3. Validate your `.env` against the schema:**
+**4. Validate your `.env` against the schema:**
 
 ```bash
 envsync validate
 ```
 
-Reads `.env` from the current directory, checks every variable against the schema, and reports any violations.
+**5. Sync secrets from a backend:**
 
-If everything is good, exits silently with status 0. If anything fails, prints a list of issues and exits non-zero — perfect for CI and pre-commit hooks.
+```bash
+envsync sync --env staging
+envsync sync --env staging --dry-run   # preview without writing
+```
 
 ---
 
@@ -91,35 +107,59 @@ If everything is good, exits silently with status 0. If anything fails, prints a
 
 ### `envsync lint`
 
-Validates that your schema file (`.envsync.yaml`) is well-formed.
+Validates that your schema file is well-formed.
 
 ```bash
-envsync lint [--config path/to/.envsync.yaml]
+envsync lint [--schema .envsync.yaml] [--json]
 ```
 
-Catches:
-
-- Invalid YAML syntax
-- Unknown fields (catches typos like `requred: true`)
-- Invalid declarations (e.g. `min`/`max` on non-numeric types, `enum` on non-string types, `required` combined with `default`)
-- Invalid regex in `format:`
-- Unknown types
+Catches: invalid YAML, unknown fields (typos like `requred: true`), invalid declarations (`min`/`max` on non-numeric types, `required` + `default`), invalid regex in `format`, unknown types.
 
 ### `envsync validate`
 
 Validates a `.env` file against the schema.
 
 ```bash
-envsync validate [--config path/to/.envsync.yaml] [--env-file path/to/.env]
+envsync validate [--schema .envsync.yaml] [--env-file .env] [--json]
 ```
 
-Catches:
+Catches: missing required variables, wrong types, values outside enum, regex mismatches, numeric values outside min/max.
 
-- Required variables that are missing
-- Values that don't match the declared type
-- Values outside the declared enum
-- Values that don't match the declared regex
-- Numeric values outside min/max bounds
+### `envsync sync`
+
+Pulls secrets from configured backends into a local `.env` file.
+
+```bash
+envsync sync --env <environment> [--schema .envsync.yaml] [--output .env] [--config ~/.envsync/config.yaml] [--dry-run] [--secrets-only]
+```
+
+- Resolves the backend for the given environment
+- Fetches secret variables from the backend (Vault, etc.)
+- Merges with schema defaults for non-secret variables
+- Validates the result against the schema
+- Writes to `.env` (or shows changes with `--dry-run`)
+
+Missing keys in the backend are non-fatal — the validator reports them if they're `required`.
+
+### `envsync diff`
+
+Shows what `sync` would change.
+
+```bash
+envsync diff [--env-file .env] [--json] [--verbose]
+```
+
+Color-coded output: `+` added (green), `-` removed (red), `~` changed (yellow).
+
+### Global flags
+
+All commands support:
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Output as structured JSON |
+| `--verbose` | Show detailed output |
+| `--no-color` | Disable color output |
 
 ---
 
@@ -128,109 +168,109 @@ Catches:
 ### Top-level fields
 
 ```yaml
-version: 1 # Required. Schema version.
-project: # Optional.
-  name: myapp # Project name, used in error messages.
-vars: # Map of variable declarations.
+version: 1
+project:
+  name: myapp
+vars:
+  ...
+environments:
   ...
 ```
 
 ### Variable fields
 
-Every variable can declare any subset of these:
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | `string`, `number`, `bool`, `url`, `json` |
+| `required` | bool | Variable must be present |
+| `default` | string | Default value (applied during sync if not fetched) |
+| `enum` | list | Allowed values (strings only) |
+| `format` | string | Regex the value must match |
+| `min` | number | Minimum (requires `type: number`) |
+| `max` | number | Maximum (requires `type: number`) |
+| `secret` | bool | Fetched from backend during sync |
+| `description` | string | Documentation |
+| `source` | object | Per-variable backend override (see below) |
 
-| Field         | Type   | Description                                                                           |
-| ------------- | ------ | ------------------------------------------------------------------------------------- |
-| `type`        | string | Value type: `string` (default), `number`, `bool`, `url`, `json`                       |
-| `required`    | bool   | If true, the variable must be present                                                 |
-| `default`     | string | Default value (for documentation/future features; not yet applied at validation time) |
-| `enum`        | list   | Allowed values (strings only)                                                         |
-| `format`      | string | Regex the value must match                                                            |
-| `min`         | number | Minimum numeric value (requires `type: number`)                                       |
-| `max`         | number | Maximum numeric value (requires `type: number`)                                       |
-| `secret`      | bool   | Marks the variable as sensitive (affects display in future commands)                  |
-| `description` | string | Free-text description for documentation                                               |
+### Per-variable source
+
+Variables can override which backend they pull from:
+
+```yaml
+vars:
+  SPECIAL_KEY:
+    secret: true
+    source:
+      backend: vault-prod
+      path: shared/keys
+      key: special_key    # defaults to variable name if omitted
+```
+
+Without `source`, secret variables use the environment-level backend.
+
+### Environment fields
+
+```yaml
+environments:
+  staging:
+    backend: vault-stag   # references a backend in user config by name
+    mount: app             # backend-specific params (merged with user config)
+    path: myapp/env
+    kv_version: 2
+```
 
 ### Types
 
-| Type     | Accepts                                                                             |
-| -------- | ----------------------------------------------------------------------------------- |
-| `string` | Any value                                                                           |
-| `number` | Anything `strconv.ParseFloat` accepts (integers and floats)                         |
-| `bool`   | `true`, `false`, `1`, `0`, `T`, `F`, `TRUE`, `FALSE` (via Go's `strconv.ParseBool`) |
-| `url`    | Absolute URLs (must have scheme and host)                                           |
-| `json`   | Any valid JSON                                                                      |
+| Type | Accepts |
+|------|---------|
+| `string` | Any value |
+| `number` | Integers and floats |
+| `bool` | `true` or `false` |
+| `url` | Absolute URLs (must have scheme and host) |
+| `json` | Any valid JSON |
 
-### Example
+---
+
+## User config
+
+Backend credentials live in `~/.envsync/config.yaml` (not committed to git):
 
 ```yaml
 version: 1
 
-vars:
-  # Required, must be a valid URL
-  DATABASE_URL:
-    required: true
-    type: url
+backends:
+  - name: vault-stag
+    type: vault
+    addr: https://vault-stag.internal:8200
 
-  # Optional number with bounds
-  PORT:
-    type: number
-    min: 1
-    max: 65535
-
-  # Enum with default
-  LOG_LEVEL:
-    enum: [debug, info, warn, error]
-    default: info
-
-  # Regex-validated
-  SEMVER:
-    format: "^\\d+\\.\\d+\\.\\d+$"
-
-  # Free-form with documentation
-  APP_NAME:
-    description: "Used in logs and error reports"
+  - name: vault-prod
+    type: vault
+    addr: https://vault-prod.internal:8200
 ```
+
+Token resolution for Vault: `token` param > `VAULT_TOKEN` env var > `~/.vault-token` file.
 
 ---
 
 ## `.env` file format
-
-`envsync` accepts standard `.env` syntax:
 
 ```bash
 # Comments start with #
 APP_NAME=myapp
 PORT=3000
 
-# Quoted values
-DATABASE_URL="postgres://user:pass@localhost/db"
+DATABASE_URL="postgres://user:pass@localhost/db"  # inline comments supported
 API_KEY='sk_test_abc123'
 
-# Export prefix is stripped
-export REDIS_URL=redis://localhost:6379
+export REDIS_URL=redis://localhost:6379   # export prefix stripped
 
-# Blank lines are ignored
-
-FEATURE_FLAG=
+FOO=bar#notcomment    # hash without preceding space is part of value
+FOO=bar # comment     # hash with preceding space starts a comment
 ```
 
-**Supported:**
+**Supported:** `KEY=value`, comments, blank lines, `export` prefix, double-quoted values (escapes: `\n`, `\t`, `\"`, `\\`), single-quoted values (literal), inline comments.
 
-- `KEY=value` pairs
-- Comments (`#` at start of line)
-- Blank lines
-- `export ` prefix (stripped on read)
-- Double-quoted values (with Go escape sequences: `\n`, `\t`, etc.)
-- Single-quoted values (literal, no escapes)
-
-**Rejected with a clear error:**
-
-- Lines without `=`
-- Empty keys
-- Keys with whitespace
-- Mismatched quotes
-- Duplicate keys
+**Rejected:** lines without `=`, empty keys, keys not matching `[A-Za-z_][A-Za-z0-9_]*`, mismatched quotes, duplicate keys, invalid escape sequences.
 
 ---
 
@@ -242,12 +282,17 @@ FEATURE_FLAG=
 - name: Validate environment
   run: |
     go install github.com/ja-guerrero/envsync@latest
+    envsync lint
     envsync validate --env-file .env.ci
 ```
 
-### Pre-commit hook
+### JSON output for automation
 
-Add to `.git/hooks/pre-commit`:
+```bash
+envsync validate --json | jq '.violations[]'
+```
+
+### Pre-commit hook
 
 ```bash
 #!/bin/sh
@@ -258,55 +303,49 @@ envsync lint && envsync validate
 
 ## Roadmap
 
-**In progress / planned:**
+**Planned:**
 
+- Per-variable source model redesign (environment-scoped backends with per-secret overrides)
+- Additional backends: AWS Secrets Manager, AWS SSM, 1Password
 - `envsync init` — scaffold `.envsync.yaml` from an existing `.env`
-- `envsync diff` — compare two `.env` files against the schema
 - Environment-scoped requirements (`required_in: [staging, production]`)
 - Conditional requirements (`required_if: { CACHE_BACKEND: redis }`)
-- Default value application (`envsync apply` or similar)
-- Secret backends: HashiCorp Vault, 1Password, AWS Secrets Manager, Doppler
-- User-level config at `~/.config/envsync/config.yaml` for backend auth
-- `envsync sync` — pull secrets from a backend into a local `.env`
-- Line numbers in error messages (currently reports variable name only)
 
 **Not planned:**
 
-- Runtime injection into `os.Environ` (use `dotenv` or your app's built-in env loading)
-- Variable interpolation inside `.env` values (`${OTHER_VAR}`)
+- Runtime injection into `os.Environ`
+- Variable interpolation (`${OTHER_VAR}`)
 
 ---
 
 ## Development
 
 ```bash
-# Clone
 git clone https://github.com/ja-guerrero/envsync
 cd envsync
 
-# Run tests
 go test ./...
-
-# Build
 go build -o envsync .
-
-# Run
-./envsync lint
-./envsync validate
 ```
 
 ### Project layout
 
 ```
 envsync/
-├── cmd/                      # Cobra commands
-│   ├── root.go
-│   ├── lint.go
-│   └── validate.go
+├── cmd/
+│   ├── cli.go          # root command, global flags
+│   ├── flags.go        # shared flag variables
+│   ├── colors.go       # shared color styles
+│   ├── output.go       # JSON output helpers
+│   ├── sync.go         # sync command
+│   ├── validate.go     # validate command
+│   ├── lint.go         # lint command
+│   └── diff.go         # diff command
 ├── internal/
-│   ├── config/               # .envsync.yaml loading and validation
-│   ├── schema/               # Variable schema and value validation
-│   └── envfile/              # .env file parsing
+│   ├── envfile/        # .env parsing and writing
+│   ├── config/         # .envsync.yaml + user config loading
+│   ├── schema/         # variable schema and validation
+│   └── backend/        # Backend interface, Vault implementation
 ├── main.go
 └── README.md
 ```
@@ -321,7 +360,7 @@ MIT
 
 ## Contributing
 
-Issues and PRs welcome. This project is early — the most valuable contributions right now are:
+Issues and PRs welcome. The most valuable contributions right now are:
 
 1. Real-world `.env` files that trip up the parser (open an issue with a reproduction).
 2. Feedback on schema expressiveness: what do you wish you could declare that you can't?
