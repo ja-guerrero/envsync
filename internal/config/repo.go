@@ -14,6 +14,7 @@ type Project struct {
 }
 
 type EnvironmentRef struct {
-	Backend string                 `yaml:"backend"`
-	Params  map[string]interface{} `yaml:",inline"`
+	Backend string                 `yaml:"backend,omitempty"`
+	Type    string                 `yaml:"type,omitempty"`
+	Params  map[string]interface{} `yaml:"params,omitempty"`
 }
