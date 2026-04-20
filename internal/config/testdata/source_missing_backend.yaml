@@ -1,0 +1,7 @@
+version: 1
+
+vars:
+  API_KEY:
+    type: string
+    source:
+      path: "myapp/keys"

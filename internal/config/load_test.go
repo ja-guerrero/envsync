@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -61,5 +62,15 @@ func TestLoadRepoConfig_RequiredWithDefault(t *testing.T) {
 	_, err := LoadRepoConfig("testdata/required_with_default.yaml")
 	if err == nil {
 		t.Fatal("expected validation error for required+default, got nil")
+	}
+}
+
+func TestLoadRepoConfig_SourceMissingBackend(t *testing.T) {
+	_, err := LoadRepoConfig("testdata/source_missing_backend.yaml")
+	if err == nil {
+		t.Fatal("expected error for source with missing backend")
+	}
+	if !strings.Contains(err.Error(), "source.backend") {
+		t.Errorf("error %q should mention source.backend", err.Error())
 	}
 }

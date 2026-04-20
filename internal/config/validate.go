@@ -13,6 +13,12 @@ var validTypes = map[string]bool{
 	"json":   true,
 }
 
+var validBackendTypes = map[string]bool{
+	"vault": true,
+	"aws":   true,
+	"azure": true,
+}
+
 func validateRepoConfig(cfg *RepoConfig) error {
 	var errs []error
 
@@ -49,11 +55,42 @@ func validateRepoConfig(cfg *RepoConfig) error {
 		if v.Required && len(v.RequiredIf) > 0 {
 			errs = append(errs, fmt.Errorf("var %q: required and required_if are mutually exclusive", name))
 		}
+
+		if v.Source != nil {
+			if v.Source.Backend == "" {
+				errs = append(errs, fmt.Errorf("var %q: source.backend is required", name))
+			}
+			if v.Source.Path == "" {
+				errs = append(errs, fmt.Errorf("var %q: source.path is required", name))
+			}
+		}
 	}
 
 	return errors.Join(errs...)
 }
 
-func ValidateUserConfig(_ *UserConfig) error {
-	return nil
+func ValidateUserConfig(cfg *UserConfig) error {
+	var errs []error
+
+	seen := make(map[string]bool, len(cfg.Backends))
+	for _, b := range cfg.Backends {
+		if b.Name == "" {
+			errs = append(errs, fmt.Errorf("backend missing name"))
+			continue
+		}
+		if seen[b.Name] {
+			errs = append(errs, fmt.Errorf("duplicate backend name %q", b.Name))
+		}
+		seen[b.Name] = true
+
+		if b.Type == "" {
+			errs = append(errs, fmt.Errorf("backend %q: missing type", b.Name))
+			continue
+		}
+		if !validBackendTypes[b.Type] {
+			errs = append(errs, fmt.Errorf("backend %q: unknown type %q", b.Name, b.Type))
+		}
+	}
+
+	return errors.Join(errs...)
 }
