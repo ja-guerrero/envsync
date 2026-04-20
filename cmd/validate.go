@@ -27,21 +27,44 @@ var validateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.LoadRepoConfig(schemaPath)
 		if err != nil {
+			if jsonOutput {
+				outputJSON(CLIResult{
+					Status:    "error",
+					ErrorCode: "E_CONFIG_INVALID",
+					Message:   err.Error(),
+				})
+			}
 			return err
 		}
 
 		f, err := os.Open(envFilePath)
 		if err != nil {
-			return fmt.Errorf("opening env file: %w", err)
+			return exitWithError(fmt.Sprintf("opening env file: %v", err), "E_CONFIG_MISSING")
 		}
 		defer f.Close()
 
 		env, err := envfile.Parse(f)
 		if err != nil {
-			return fmt.Errorf("parsing env file: %w", err)
+			return exitWithError(fmt.Sprintf("parsing env file: %v", err), "E_PARSE_INVALID_KEY")
 		}
 
 		violations := schema.Validate(cfg.Vars, env)
+
+		if jsonOutput {
+			vj := make([]ViolationJSON, len(violations))
+			for i, v := range violations {
+				vj[i] = ViolationJSON{Var: v.Var, Message: v.Message}
+			}
+			status := "ok"
+			if len(vj) > 0 {
+				status = "error"
+			}
+			return outputJSON(CLIResult{
+				Status:     status,
+				Violations: vj,
+				Message:    fmt.Sprintf("%d violation(s)", len(violations)),
+			})
+		}
 
 		if len(violations) == 0 {
 			green.Printf("✓ ")
@@ -68,7 +91,6 @@ var validateCmd = &cobra.Command{
 }
 
 func init() {
-	validateCmd.Flags().StringVar(&schemaPath, "schema", ".envsync.yaml", "path to repo env schema")
 	validateCmd.Flags().StringVar(&envFilePath, "env-file", ".env", "path to .env file")
 	rootCmd.AddCommand(validateCmd)
 }
