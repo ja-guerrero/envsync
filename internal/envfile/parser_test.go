@@ -83,7 +83,7 @@ func TestParse(t *testing.T) {
 			name:        "missing equals sign",
 			input:       "FOOBAR",
 			wantErr:     true,
-			errContains: "expected key=value",
+			errContains: "expected KEY=VALUE",
 		},
 		{
 			name:        "empty key",
@@ -113,31 +113,31 @@ func TestParse(t *testing.T) {
 			name:        "mismatched double quotes",
 			input:       `FOO="hello`,
 			wantErr:     true,
-			errContains: "mismatched double quotes",
+			errContains: "unterminated double quote",
 		},
 		{
 			name:        "mismatched single quotes",
 			input:       "FOO='hello",
 			wantErr:     true,
-			errContains: "mismatched single quotes",
+			errContains: "unterminated single quote",
 		},
 		{
 			name:        "lone double quote",
 			input:       `FOO="`,
 			wantErr:     true,
-			errContains: "unterminated quoted value",
+			errContains: "unterminated double quote",
 		},
 		{
 			name:        "lone single quote",
 			input:       "FOO='",
 			wantErr:     true,
-			errContains: "unterminated quoted value",
+			errContains: "unterminated single quote",
 		},
 		{
 			name:        "whitespace inside key rejected",
 			input:       "F OO=bar",
 			wantErr:     true,
-			errContains: "contains whitespace",
+			errContains: "invalid key",
 		},
 	}
 
@@ -155,6 +155,205 @@ func TestParse(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseFile(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		wantEntries []Entry
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:  "simple key=value",
+			input: "FOO=bar",
+			wantEntries: []Entry{
+				{Key: "FOO", Value: "bar", QuoteStyle: QuoteNone, Line: 1},
+			},
+		},
+		{
+			name:  "double-quoted value",
+			input: `FOO="hello world"`,
+			wantEntries: []Entry{
+				{Key: "FOO", Value: "hello world", QuoteStyle: QuoteDouble, Line: 1},
+			},
+		},
+		{
+			name:  "single-quoted value",
+			input: "FOO='hello world'",
+			wantEntries: []Entry{
+				{Key: "FOO", Value: "hello world", QuoteStyle: QuoteSingle, Line: 1},
+			},
+		},
+		{
+			name:  "double-quoted escapes",
+			input: `FOO="line1\nline2\ttab\"\\"`,
+			wantEntries: []Entry{
+				{Key: "FOO", Value: "line1\nline2\ttab\"\\", QuoteStyle: QuoteDouble, Line: 1},
+			},
+		},
+		{
+			name:  "single-quoted preserves backslash",
+			input: `FOO='line1\nline2'`,
+			wantEntries: []Entry{
+				{Key: "FOO", Value: `line1\nline2`, QuoteStyle: QuoteSingle, Line: 1},
+			},
+		},
+		{
+			name:  "inline comment with space before hash",
+			input: "FOO=bar # this is a comment",
+			wantEntries: []Entry{
+				{Key: "FOO", Value: "bar", InlineComment: "this is a comment", QuoteStyle: QuoteNone, Line: 1},
+			},
+		},
+		{
+			name:  "hash without preceding space is part of value",
+			input: "FOO=bar#notcomment",
+			wantEntries: []Entry{
+				{Key: "FOO", Value: "bar#notcomment", QuoteStyle: QuoteNone, Line: 1},
+			},
+		},
+		{
+			name:  "hash inside double quotes is not a comment",
+			input: `FOO="bar # inside"`,
+			wantEntries: []Entry{
+				{Key: "FOO", Value: "bar # inside", QuoteStyle: QuoteDouble, Line: 1},
+			},
+		},
+		{
+			name:  "comment after quoted value",
+			input: `FOO="bar" # comment`,
+			wantEntries: []Entry{
+				{Key: "FOO", Value: "bar", InlineComment: "comment", QuoteStyle: QuoteDouble, Line: 1},
+			},
+		},
+		{
+			name:  "export prefix",
+			input: "export FOO=bar",
+			wantEntries: []Entry{
+				{Key: "FOO", Value: "bar", QuoteStyle: QuoteNone, Line: 1},
+			},
+		},
+		{
+			name:  "empty value",
+			input: "FOO=",
+			wantEntries: []Entry{
+				{Key: "FOO", Value: "", QuoteStyle: QuoteNone, Line: 1},
+			},
+		},
+		{
+			name:  "value with equals sign",
+			input: "FOO=a=b=c",
+			wantEntries: []Entry{
+				{Key: "FOO", Value: "a=b=c", QuoteStyle: QuoteNone, Line: 1},
+			},
+		},
+		{
+			name:  "preserves comment lines in structure",
+			input: "# header\n\nFOO=bar\n# mid\nBAZ=qux",
+			wantEntries: []Entry{
+				{Key: "FOO", Value: "bar", QuoteStyle: QuoteNone, Line: 3},
+				{Key: "BAZ", Value: "qux", QuoteStyle: QuoteNone, Line: 5},
+			},
+		},
+		{
+			name:        "key starts with digit",
+			input:       "3FOO=bar",
+			wantErr:     true,
+			errContains: "invalid key",
+		},
+		{
+			name:        "key with special char",
+			input:       "FOO-BAR=baz",
+			wantErr:     true,
+			errContains: "invalid key",
+		},
+		{
+			name:        "mismatched double quotes",
+			input:       `FOO="hello`,
+			wantErr:     true,
+			errContains: "unterminated double quote",
+		},
+		{
+			name:        "mismatched single quotes",
+			input:       "FOO='hello",
+			wantErr:     true,
+			errContains: "unterminated single quote",
+		},
+		{
+			name:        "duplicate key",
+			input:       "FOO=bar\nFOO=baz",
+			wantErr:     true,
+			errContains: "duplicate key",
+		},
+		{
+			name:        "empty key",
+			input:       "=value",
+			wantErr:     true,
+			errContains: "empty key",
+		},
+		{
+			name:        "missing equals",
+			input:       "FOOBAR",
+			wantErr:     true,
+			errContains: "expected KEY=VALUE",
+		},
+		{
+			name:        "invalid escape in double quotes",
+			input:       `FOO="hello\x"`,
+			wantErr:     true,
+			errContains: "invalid escape",
+		},
+		{
+			name:  "whitespace trimmed around key and value",
+			input: "  FOO  =  bar  ",
+			wantEntries: []Entry{
+				{Key: "FOO", Value: "bar", QuoteStyle: QuoteNone, Line: 1},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f, err := ParseFile(strings.NewReader(tt.input))
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("error %q does not contain %q", err.Error(), tt.errContains)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			entries := f.Entries()
+			if len(entries) != len(tt.wantEntries) {
+				t.Fatalf("got %d entries, want %d", len(entries), len(tt.wantEntries))
+			}
+			for i, want := range tt.wantEntries {
+				got := entries[i]
+				if got.Key != want.Key {
+					t.Errorf("entry[%d].Key = %q, want %q", i, got.Key, want.Key)
+				}
+				if got.Value != want.Value {
+					t.Errorf("entry[%d].Value = %q, want %q", i, got.Value, want.Value)
+				}
+				if got.QuoteStyle != want.QuoteStyle {
+					t.Errorf("entry[%d].QuoteStyle = %d, want %d", i, got.QuoteStyle, want.QuoteStyle)
+				}
+				if got.Line != want.Line {
+					t.Errorf("entry[%d].Line = %d, want %d", i, got.Line, want.Line)
+				}
+				if got.InlineComment != want.InlineComment {
+					t.Errorf("entry[%d].InlineComment = %q, want %q", i, got.InlineComment, want.InlineComment)
+				}
 			}
 		})
 	}
