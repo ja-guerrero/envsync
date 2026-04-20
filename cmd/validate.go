@@ -91,6 +91,7 @@ var validateCmd = &cobra.Command{
 }
 
 func init() {
+	validateCmd.Flags().StringVar(&schemaPath, "schema", ".envsync.yaml", "path to repo env schema")
 	validateCmd.Flags().StringVar(&envFilePath, "env-file", ".env", "path to .env file")
 	rootCmd.AddCommand(validateCmd)
 }
