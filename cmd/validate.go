@@ -4,21 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/fatih/color"
 	"github.com/ja-guerrero/envsync/internal/config"
 	"github.com/ja-guerrero/envsync/internal/envfile"
 	"github.com/ja-guerrero/envsync/internal/schema"
 	"github.com/spf13/cobra"
-)
-
-var envFilePath string
-
-var (
-	bold    = color.New(color.Bold)
-	red     = color.New(color.FgRed)
-	green   = color.New(color.FgGreen)
-	faint   = color.New(color.Faint)
-	varName = color.New(color.FgCyan, color.Bold)
 )
 
 var validateCmd = &cobra.Command{

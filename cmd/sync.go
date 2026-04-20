@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/fatih/color"
 	"github.com/ja-guerrero/envsync/internal/backend"
 	"github.com/ja-guerrero/envsync/internal/config"
 	"github.com/ja-guerrero/envsync/internal/envfile"
@@ -86,7 +85,6 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	if dryRun {
-		yellow := color.New(color.FgYellow)
 		yellow.Printf("~ ")
 		fmt.Printf("dry run: would write %d vars to %s\n", len(merged), outputPath)
 		return nil
@@ -134,7 +132,8 @@ func resolveBackends(vars schema.Schema, envRef config.EnvironmentRef) (map[stri
 		for _, b := range userCfg.Backends {
 			if b.Name == name {
 				backendType = b.Type
-				params = b.Params
+				// Merge: user config params as base, env-level params override
+				params = mergeParams(b.Params, envRef.Params)
 				break
 			}
 		}
@@ -184,7 +183,8 @@ func buildVarSources(vars schema.Schema, envRef config.EnvironmentRef, secretsOn
 				Path:        v.Source.Path,
 				Key:         key,
 			}
-		} else if envBackend != "" && envPath != "" {
+		} else if v.Secret && envBackend != "" && envPath != "" {
+			// Environment-level fallback only applies to secret vars
 			sources[name] = &backend.VarSource{
 				BackendName: envBackend,
 				Path:        envPath,
@@ -212,5 +212,22 @@ func applyDefaults(vars schema.Schema, fetched map[string]string, sources map[st
 		}
 	}
 
+	return merged
+}
+
+// mergeParams combines two param maps. Override values take precedence over base.
+// Known non-param keys (backend, type) are excluded from the merge since they
+// come from EnvironmentRef's inline YAML and aren't actual backend params.
+func mergeParams(base, override map[string]interface{}) map[string]interface{} {
+	merged := make(map[string]interface{}, len(base)+len(override))
+	for k, v := range base {
+		merged[k] = v
+	}
+	for k, v := range override {
+		if k == "backend" || k == "type" {
+			continue // these are EnvironmentRef struct fields, not params
+		}
+		merged[k] = v
+	}
 	return merged
 }

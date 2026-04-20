@@ -5,7 +5,6 @@ import (
 	"os"
 	"sort"
 
-	"github.com/fatih/color"
 	"github.com/ja-guerrero/envsync/internal/envfile"
 	"github.com/spf13/cobra"
 )
@@ -90,25 +89,20 @@ func computeDiff(current, resolved map[string]string) []DiffEntry {
 }
 
 func printDiff(entries []DiffEntry) error {
-	added := color.New(color.FgGreen)
-	removed := color.New(color.FgRed)
-	changed := color.New(color.FgYellow)
-	unchanged := color.New(color.Faint)
-
 	for _, e := range entries {
 		switch e.Type {
 		case "added":
-			added.Printf("  + %-30s", e.Key)
+			green.Printf("  + %-30s", e.Key)
 			fmt.Printf("  %s\n", e.NewValue)
 		case "removed":
-			removed.Printf("  - %-30s", e.Key)
+			red.Printf("  - %-30s", e.Key)
 			fmt.Printf("  %s\n", e.OldValue)
 		case "changed":
-			changed.Printf("  ~ %-30s", e.Key)
+			yellow.Printf("  ~ %-30s", e.Key)
 			fmt.Printf("  %s → %s\n", e.OldValue, e.NewValue)
 		case "unchanged":
 			if verbose {
-				unchanged.Printf("    %-30s", e.Key)
+				faint.Printf("    %-30s", e.Key)
 				fmt.Println("  (unchanged)")
 			}
 		}
